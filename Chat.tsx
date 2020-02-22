@@ -1,17 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   ScrollView,
   TextInput,
-  RefreshControl,
   KeyboardAvoidingView
 } from "react-native";
 import gql from "graphql-tag";
-import { useQuery, useMutation } from "react-apollo-hooks";
+import { useQuery, useMutation, useSubscription } from "react-apollo-hooks";
 import withSuspense from "./withSuspense";
 
-const GET_MESSAGE = gql`
+const GET_MESSAGES = gql`
   query messages {
     messages {
       id
@@ -29,6 +28,15 @@ const SEND_MESSAGE = gql`
   }
 `;
 
+const NEW_MESSAGE = gql`
+  subscription newMessage {
+    newMessage {
+      id
+      text
+    }
+  }
+`;
+
 function Chat() {
   const [message, setMessage] = useState("");
   const [sendMessageMutation] = useMutation(SEND_MESSAGE, {
@@ -36,37 +44,39 @@ function Chat() {
       text: message
     }
   });
-  const { data, error, refetch } = useQuery(GET_MESSAGE, { suspend: true });
-  const [refreshing, setRefreshing] = useState(false);
-  const refresh = async () => {
-    try {
-      setRefreshing(true);
-      await refetch();
-    } catch (e) {
-      console.log(e);
-    } finally {
-      setRefreshing(false);
+  const {
+    data: { messages: oldMessages },
+    error
+  } = useQuery(GET_MESSAGES, {
+    suspend: true
+  });
+  const { data } = useSubscription(NEW_MESSAGE);
+  const [messages, setMessages] = useState(oldMessages || []);
+  const handleNewMessage = () => {
+    console.log(data);
+    if (data !== undefined) {
+      const { newMessage } = data;
+      setMessages(previous => [...previous, newMessage]);
     }
   };
+  useEffect(() => {
+    handleNewMessage();
+  }, [data]);
+  const onChangeText = text => setMessage(text);
   const onSubmit = async () => {
     if (message === "") {
       return;
     }
     try {
       await sendMessageMutation();
-      setMessage("")
-      refetch();
+      setMessage("");
     } catch (e) {
       console.log(e);
     }
   };
-  const onChangeText = text => setMessage(text);
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} enabled behavior="padding">
       <ScrollView
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
-        }
         contentContainerStyle={{
           paddingVertical: 50,
           flex: 1,
@@ -74,7 +84,7 @@ function Chat() {
           alignItems: "center"
         }}
       >
-        {data.messages.map(m => (
+        {messages.map(m => (
           <View key={m.id} style={{ marginBottom: 10 }}>
             <Text>{m.text}</Text>
           </View>
